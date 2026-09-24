@@ -88,8 +88,8 @@ e:/Ravi kanta Estimate print A5/
 ## How to Run
 
 ### Quick Start (Windows):
-- Simply double-click **`Run.bat`**.
-- It will automatically launch the local PHP server on port `8088` and open the app in your default web browser.
+- **To Launch the Application**: Double-click **`Run.bat`**. It starts the server and opens the dashboard (`http://127.0.0.1:8088/`).
+- **To Run Setup & Configuration**: Double-click **`setup.bat`**. It starts the server and opens the Setup & Recovery Wizard (`http://127.0.0.1:8088/setup.php`).
 
 ### Manual Start:
 1. Start the PHP server from the project directory:
@@ -100,5 +100,5 @@ e:/Ravi kanta Estimate print A5/
    ```
    http://127.0.0.1:8088/
    ```
-3. If setting up for the first time, it will automatically guide you through [`setup.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/setup.php).
+3. If setting up for the first time, visit [`setup.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/setup.php).
 4. Save your **Master Decryption Key** safely!
