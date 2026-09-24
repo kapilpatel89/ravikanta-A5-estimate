@@ -20,13 +20,7 @@ A secure, standalone web application built with **HTML, CSS, JavaScript, and PHP
   2. The system prompts for the **Master Decryption Key**.
   3. Only upon verifying the valid Decryption Key can the user reset the PIN and regain access.
 
-### 3. Setup Wizard (`setup.php`)
-- Guided first-time setup or reconfiguration.
-- Generates a high-entropy **Master Decryption Key** (e.g. `RK-XXXX-XXXX-XXXX-XXXX`) with one-click copy and `.txt` backup download.
-- Sets your PIN and business details (Shop Name, Mobile, Address).
-- Automatically initializes the encrypted database with preloaded sample data (**RK-KISHAN** - 20 Doors & 21 WPC Frames).
-
-### 4. Dynamic Formulas & Calculation Engine
+### 3. Dynamic Formulas & Calculation Engine
 - **Doors Calculation**:
   $$\text{SQFT} = \frac{\text{Height (inches)} \times \text{Width (inches)} \times \text{Quantity}}{144}$$
   $$\text{Door Amount} = \text{SQFT} \times \text{Rate (₹/sqft)}$$
@@ -40,24 +34,61 @@ A secure, standalone web application built with **HTML, CSS, JavaScript, and PHP
 - **Bill Amount & Cash Balance**:
   - Input field for **Bill Amount / Advance Paid**.
   - Formula: $\text{Cash Balance Due} = \text{Total Estimate Amount} - \text{Bill Amount}$.
-  - Example: Total $500 - 300\text{ (Bill Amount)} = 200\text{ Cash Balance}$.
 
-### 5. A5 Paper Estimate Print Formats
+### 4. A5 Paper Estimate Print Formats (Authentic Tally Bill UI)
 - Strictly sized for **A5 Paper Sheet** ($148\text{mm} \times 210\text{mm}$ portrait).
 - Prominent header title at the top of the page: **`ESTIMATE`**.
-- **Space-Optimized Single-Line Header**:
-  - Removed shop name, phone, priority, tagline, and notes/terms from the printout.
-  - Order details formatted into a single horizontal strip:
-    $$\text{Est No: RKD-...} \quad\vert\quad \text{Date: DD-MM-YYYY} \quad\vert\quad \text{Party: Name} \quad\vert\quad \text{Mobile: XXXXXXXXXX}$$
-- **Signatures & Notes Removed**:
-  - Customer signature and shop signature blocks removed from the bottom.
-  - Notes / terms block removed to maximize printable item rows.
-- **Dynamic Multi-Page Counter**:
-  - If the estimate fits on 1 page: no counter is displayed.
-  - If the estimate spans more than 1 page: automatically displays a page counter at the bottom of all pages (e.g., `Page 1 of 2`, `Page 2 of 2`, `Page 1 of 3`).
+- Authentic Tally boxed grid format with vertical and horizontal borders.
+- Two-column header: Buyer / Party details on the left, Estimate No. and Date on the right.
+- Indian numbering system amount-in-words converter (e.g. *INR Eighty Four Thousand Six Hundred Nineteen Only*).
+- **Strict Page-Break Protection**:
+  - Table rows, headers, and totals use `break-inside: avoid !important;`.
+  - Non-repeating table totals prevent duplicate counts on multi-page orders.
 - Dual printing options:
-  - **In-App A5 Print**: Click `Print A5 Format` to view the interactive modal preview and trigger browser print (`window.print()`).
+  - **In-App A5 Print**: Click `Preview & Print A5` on the dashboard to view the live preview and trigger native printing.
   - **Dedicated Print View**: Accessible via [`print.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/print.php).
+
+### 5. Setup Wizard & Security Provisioning (`setup.php`)
+- Guided first-time setup or emergency reconfiguration.
+- Generates a cryptographically secure **Master Decryption Key** (`RK-XXXX-XXXX-XXXX-XXXX-XXXX`) with 1-click clipboard copy and `.txt` backup file download.
+- Sets your 4 to 8-digit access PIN and business details (Shop Name, Mobile, Address).
+- Automatically initializes the local encrypted database with preloaded sample data (**RK-KISHAN** - 20 Doors & 21 WPC Frames).
+- 1-click startup on Windows via **`setup.bat`**.
+
+---
+
+## Setup Functions & Architecture (`setup.php`)
+
+The [`setup.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/setup.php) wizard serves as the root provisioning and emergency recovery portal:
+
+1. **Cryptographic Key Generation (`generateSecureKey()`)**:
+   - Uses PHP's cryptographically secure pseudo-random bytes (`random_bytes(12)`) to generate a 24-character hexadecimal key formatted as:
+     $$\text{RK-XXXX-XXXX-XXXX-XXXX-XXXX}$$
+   - This key acts as the master decryption secret for the AES-256-CBC database files.
+   - Includes one-click **Copy to Clipboard** and automated `.txt` backup file generation (`ravi_kanta_recovery_key.txt`).
+
+2. **PIN Credential Hashing & Key Envelope**:
+   - Sets a 4 to 8-digit numeric access PIN with verification confirmation.
+   - The PIN is securely hashed using **Bcrypt** (`PASSWORD_BCRYPT`).
+   - The Master Key is encrypted using the PIN via `encryptData($decryptionKey, $pin)` and stored in `.data/config.enc.json`. On daily login, entering the PIN unlocks the Master Key in memory without storing it in plaintext anywhere.
+
+3. **Business Profile & Shop Customization**:
+   - Configures business identity fields:
+     - **Shop Name**: e.g. *RAVI KANTA DOORS & HARDWARE*
+     - **Support Mobile**: e.g. *9019711881*
+     - **Shop Address / Site**: e.g. *Bangalore, Karnataka*
+   - These details propagate automatically across the application headers and estimate documents.
+
+4. **Preloaded Real-World Sample Data Initialization**:
+   - Optional toggle checkbox to seed the encrypted database with realistic orders (**RK-KISHAN** with 20 Doors and 21 WPC Frames).
+   - Pre-populates door sizes ($79" \times 39"$, $81" \times 32"$), frame sections ($3\times2$, $4\times2$), flush door types, design numbers, and transport charges right out of the box.
+
+5. **Lockout Recovery & Emergency Access**:
+   - If an incorrect PIN is entered 3 consecutive times on the main dashboard, the app enters locked mode.
+   - Accessing [`setup.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/setup.php) allows the administrator to enter the Master Decryption Key to reset the PIN and unlock the database without losing any saved estimate records.
+
+6. **1-Click Execution via `setup.bat`**:
+   - Validates that PHP is available on the system, starts the local PHP server on port `8088`, and immediately opens the setup wizard in your default browser.
 
 ---
 
@@ -65,6 +96,8 @@ A secure, standalone web application built with **HTML, CSS, JavaScript, and PHP
 
 ```
 e:/Ravi kanta Estimate print A5/
+├── Run.bat                  # 1-Click launcher: starts server & opens main dashboard
+├── setup.bat                # 1-Click setup: starts server & opens setup.php wizard
 ├── index.php                # Main dashboard, PIN gatekeeper, dynamic forms & A5 preview
 ├── setup.php                # First-time setup, PIN creation & Decryption Key generator
 ├── print.php                # Standalone dedicated A5 print template
@@ -73,7 +106,7 @@ e:/Ravi kanta Estimate print A5/
 ├── assets/
 │   ├── css/
 │   │   ├── style.css        # Modern, responsive application styles
-│   │   └── print-a5.css     # Strict A5 paper print stylesheet (@page A5 portrait)
+│   │   └── print-a5.css     # Authentic Tally Bill format calibrated for A5 portrait
 │   └── js/
 │       └── app.js           # Dynamic row logic, live math calculations & AJAX bridge
 └── .data/                   # Hidden local encrypted JSON storage (protected)
