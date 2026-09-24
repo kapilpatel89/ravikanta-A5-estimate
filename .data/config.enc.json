@@ -1,0 +1,12 @@
+{
+    "shop_name": "RAVI KANTA DOORS",
+    "shop_phone": "9019711881",
+    "shop_address": "",
+    "pin_hash": "$2y$12$lvEzr.T4yPCA2Wktk5i1A.ZI4.1M4XDSXqCgtn1hpsfYl5qwySC9G",
+    "master_key_hash": "$2y$12$07grmSpCPupTVFl5TiUNHu\/dCaTDjsLPGBw\/JgBcU\/t0cG.yi0Vdu",
+    "master_key_enc": "ouZLT58Bnx8DenxjvqPNjBYADVcCtTrLUUgs6KiQaLcJNatFKGQmne7SgMGtTqYrfTS2BZWKT801zp1rmWTnj3I+Eig9v7EW8OVw+ID0AOEPNkgzKsSTZPVcP09XTMZq",
+    "failed_attempts": 0,
+    "is_locked": false,
+    "setup_date": "2026-09-24 14:04:36",
+    "last_pin_reset": "2026-09-24 14:05:47"
+}
