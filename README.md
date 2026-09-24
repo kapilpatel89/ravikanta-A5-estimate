@@ -87,6 +87,11 @@ e:/Ravi kanta Estimate print A5/
 
 ## How to Run
 
+### Quick Start (Windows):
+- Simply double-click **`Run.bat`**.
+- It will automatically launch the local PHP server on port `8088` and open the app in your default web browser.
+
+### Manual Start:
 1. Start the PHP server from the project directory:
    ```powershell
    php -S 127.0.0.1:8088
