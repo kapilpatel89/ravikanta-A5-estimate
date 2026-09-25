@@ -5,11 +5,46 @@
 // Global State
 let activeEstimate = null;
 let savedEstimatesList = [];
+let memorizedParties = [];
+let activePartyPricing = null;
+let selectedModalPartyId = null;
+
 let shopConfig = {
     name: 'RAVI KANTA DOORS & HARDWARE',
     phone: '9019711881',
     address: ''
 };
+
+// Recognized Door Categories (per user requirements)
+const STANDARD_DOOR_CATEGORIES = [
+    'Microcoating',
+    'Membrane',
+    'Primer',
+    'Laminate',
+    'WPC',
+    'UV Coating',
+    'Veneer',
+    'Flush Door',
+    'Teak Wood'
+];
+
+// Recognized WPC Frame Sections
+const STANDARD_FRAME_SECTIONS = ['3x2', '4x2', '4x2.5', '5x2.5'];
+
+// Intelligent category detector
+function detectDoorCategoryJs(doorType, flushSpec, notes) {
+    const text = ((doorType || '') + ' ' + (flushSpec || '') + ' ' + (notes || '')).toLowerCase();
+    if (text.includes('micro')) return 'Microcoating';
+    if (text.includes('uv')) return 'UV Coating';
+    if (text.includes('membrane')) return 'Membrane';
+    if (text.includes('primer')) return 'Primer';
+    if (text.includes('laminat')) return 'Laminate';
+    if (text.includes('wpc')) return 'WPC';
+    if (text.includes('veneer')) return 'Veneer';
+    if (text.includes('teak')) return 'Teak Wood';
+    if (text.includes('flush')) return 'Flush Door';
+    return 'Laminate';
+}
 
 // Default sample data provided by the user
 const SAMPLE_ESTIMATE_DATA = {
@@ -22,6 +57,7 @@ const SAMPLE_ESTIMATE_DATA = {
     "orderPriority": "Normal",
     "orderDate": "2026-09-24",
     "doors": [
+
         {
             "id": "door-1",
             "doorType": "PRIMER  COATED  DOOR",
@@ -354,6 +390,203 @@ function showAlert(container, msg, type = 'danger') {
 }
 
 /* ========================================================
+   PARTY MASTER & PARTY-WISE CUSTOM PRICING ENGINE
+   ======================================================== */
+
+async function loadParties() {
+    try {
+        const res = await fetch('api.php?action=get_parties');
+        const data = await res.json();
+        if (data.success && Array.isArray(data.parties)) {
+            memorizedParties = data.parties;
+            updatePartySuggestionsDatalist();
+            if (activeEstimate && activeEstimate.partyName) {
+                updateActivePartyContext(activeEstimate.partyName);
+            }
+        }
+    } catch (err) {
+        console.error('Failed to load parties:', err);
+    }
+}
+
+function updatePartySuggestionsDatalist() {
+    const dl = document.getElementById('partySuggestionsList');
+    if (!dl) return;
+    dl.innerHTML = '';
+    memorizedParties.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.partyName;
+        const dCount = Object.keys(p.doorRates || {}).length;
+        const fCount = Object.keys(p.frameRates || {}).length;
+        opt.label = `${p.partyMobile ? p.partyMobile + ' • ' : ''}${dCount} Door rates, ${fCount} Frame rates`;
+        dl.appendChild(opt);
+    });
+}
+
+function updateActivePartyContext(partyName) {
+    const clean = (partyName || '').trim();
+    if (!clean) {
+        activePartyPricing = null;
+        updatePartyBadge(null);
+        return;
+    }
+
+    const matched = memorizedParties.find(p => p.partyName.toLowerCase() === clean.toLowerCase());
+    if (matched) {
+        activePartyPricing = matched;
+        updatePartyBadge(matched);
+    } else {
+        activePartyPricing = {
+            partyName: clean,
+            partyMobile: document.getElementById('partyMobile') ? document.getElementById('partyMobile').value.trim() : '',
+            partyAddress: document.getElementById('partyAddress') ? document.getElementById('partyAddress').value.trim() : '',
+            doorRates: {},
+            frameRates: {}
+        };
+        updatePartyBadge(null, clean);
+    }
+}
+
+function updatePartyBadge(party, newPartyName = null) {
+    const badgeEl = document.getElementById('activePartyRateBadge');
+    if (!badgeEl) return;
+
+    if (party) {
+        const dCount = Object.keys(party.doorRates || {}).length;
+        const fCount = Object.keys(party.frameRates || {}).length;
+        badgeEl.style.display = 'inline-flex';
+        badgeEl.className = 'party-rate-badge';
+        badgeEl.innerHTML = `
+            <span class="badge-tag">SAVED PARTY</span>
+            <span>⭐ <strong>${escapeHtml(party.partyName)}</strong>: ${dCount} Door rates &amp; ${fCount} Frame rates memorized</span>
+            <button type="button" class="btn-link" style="margin-left:4px; font-size:11px; text-decoration:underline; background:none; border:none; color:inherit; cursor:pointer;" onclick="openPartiesModal('${party.id}')">View Rates</button>
+        `;
+    } else if (newPartyName) {
+        badgeEl.style.display = 'inline-flex';
+        badgeEl.className = 'party-rate-badge new';
+        badgeEl.innerHTML = `
+            <span class="badge-tag" style="background:#16a34a;">NEW PARTY</span>
+            <span>✨ <strong>${escapeHtml(newPartyName)}</strong> will be memorized with these rates on save</span>
+        `;
+    } else {
+        badgeEl.style.display = 'none';
+        badgeEl.innerHTML = '';
+    }
+}
+
+function onPartyNameInput(val) {
+    updateActivePartyContext(val);
+}
+
+function onPartyNameSelected(val) {
+    const clean = (val || '').trim();
+    if (!clean) return;
+
+    const matched = memorizedParties.find(p => p.partyName.toLowerCase() === clean.toLowerCase());
+    if (matched) {
+        if (matched.partyMobile) {
+            document.getElementById('partyMobile').value = matched.partyMobile;
+            if (activeEstimate) activeEstimate.partyMobile = matched.partyMobile;
+        }
+        if (matched.partyAddress) {
+            document.getElementById('partyAddress').value = matched.partyAddress;
+            if (activeEstimate) activeEstimate.partyAddress = matched.partyAddress;
+        }
+        updateActivePartyContext(clean);
+
+        // Auto-apply this party's memorized prices to active doors and frames
+        let ratesUpdated = false;
+        if (activeEstimate && activeEstimate.doors) {
+            activeEstimate.doors.forEach(d => {
+                const cat = d.category || detectDoorCategoryJs(d.doorType, d.flushDoorType, d.notes);
+                d.category = cat;
+                if (matched.doorRates && matched.doorRates[cat] !== undefined) {
+                    d.rate = matched.doorRates[cat];
+                    ratesUpdated = true;
+                }
+            });
+        }
+        if (activeEstimate && activeEstimate.wpcFrames) {
+            activeEstimate.wpcFrames.forEach(f => {
+                const sec = f.section || '3x2';
+                if (matched.frameRates && matched.frameRates[sec] !== undefined) {
+                    f.rate = matched.frameRates[sec];
+                    ratesUpdated = true;
+                }
+            });
+        }
+
+        if (ratesUpdated) {
+            renderDoorsTable();
+            renderFramesTable();
+            calculateAll();
+            syncA5PrintArea();
+        }
+    } else {
+        updateActivePartyContext(clean);
+    }
+}
+
+function getPartyDoorRate(category) {
+    if (!category) return 0;
+    if (activePartyPricing && activePartyPricing.doorRates && activePartyPricing.doorRates[category] !== undefined) {
+        return activePartyPricing.doorRates[category];
+    }
+    const defaults = {
+        'Primer': 125,
+        'Laminate': 250,
+        'Membrane': 195,
+        'Microcoating': 180,
+        'WPC': 140,
+        'UV Coating': 220,
+        'Veneer': 320,
+        'Flush Door': 110,
+        'Teak Wood': 450
+    };
+    return defaults[category] || 0;
+}
+
+function getPartyFrameRate(section) {
+    if (!section) return 65;
+    if (activePartyPricing && activePartyPricing.frameRates && activePartyPricing.frameRates[section] !== undefined) {
+        return activePartyPricing.frameRates[section];
+    }
+    const defaults = {
+        '3x2': 65,
+        '4x2': 125,
+        '4x2.5': 145,
+        '5x2.5': 180
+    };
+    return defaults[section] || 65;
+}
+
+function setPartyDoorRateInMemory(category, rate) {
+    if (!category || rate <= 0) return;
+    if (!activePartyPricing) {
+        activePartyPricing = {
+            partyName: document.getElementById('partyName').value.trim(),
+            doorRates: {},
+            frameRates: {}
+        };
+    }
+    if (!activePartyPricing.doorRates) activePartyPricing.doorRates = {};
+    activePartyPricing.doorRates[category] = parseFloat(rate) || 0;
+}
+
+function setPartyFrameRateInMemory(section, rate) {
+    if (!section || rate <= 0) return;
+    if (!activePartyPricing) {
+        activePartyPricing = {
+            partyName: document.getElementById('partyName').value.trim(),
+            doorRates: {},
+            frameRates: {}
+        };
+    }
+    if (!activePartyPricing.frameRates) activePartyPricing.frameRates = {};
+    activePartyPricing.frameRates[section] = parseFloat(rate) || 0;
+}
+
+/* ========================================================
    ESTIMATE DATA MANAGEMENT (DYNAMIC FORMS & CALCULATIONS)
    ======================================================== */
 
@@ -375,7 +608,10 @@ async function refreshSavedEstimatesList() {
 }
 
 async function loadEstimates() {
-    await refreshSavedEstimatesList();
+    await Promise.all([
+        refreshSavedEstimatesList(),
+        loadParties()
+    ]);
     // Load the most recent estimate or sample
     if (savedEstimatesList.length > 0) {
         loadEstimateIntoForm(savedEstimatesList[0]);
@@ -404,6 +640,7 @@ function createNewEstimate() {
         doors: [
             {
                 id: 'door-' + Date.now(),
+                category: 'Primer',
                 doorType: 'PRIMER COATED DOOR',
                 flushDoorType: 'PINE FRAME -SC (INSIDE PARTICAL)',
                 designNo: 'WS-17',
@@ -411,7 +648,7 @@ function createNewEstimate() {
                 height: 79,
                 width: 39,
                 quantity: 1,
-                rate: 125,
+                rate: getPartyDoorRate('Primer') || 125,
                 notes: ''
             }
         ],
@@ -443,20 +680,27 @@ function loadEstimateIntoForm(est) {
     const cleanNotes = est.notes || est.terms || '';
     const cleanBillAmount = parseFloat(est.billAmount !== undefined ? est.billAmount : (est.billAmt !== undefined ? est.billAmt : (est.advance !== undefined ? est.advance : 0))) || 0;
 
-    // Doors: strict new array
+    // Doors: strict new array with categories
     const rawDoors = est.doors || est.doorItems || est.door_items || est.items || [];
-    const cleanDoors = Array.isArray(rawDoors) ? rawDoors.map((d, i) => ({
-        id: d.id || ('door-' + (Date.now() + i)),
-        doorType: d.doorType || d.type || d.description || 'DOOR',
-        flushDoorType: d.flushDoorType || d.flush || d.flushSpec || '',
-        designNo: d.designNo || d.design || '',
-        thickness: d.thickness || d.thick || '',
-        height: parseFloat(d.height !== undefined ? d.height : (d.h !== undefined ? d.h : 0)) || 0,
-        width: parseFloat(d.width !== undefined ? d.width : (d.w !== undefined ? d.w : 0)) || 0,
-        quantity: parseInt(d.quantity !== undefined ? d.quantity : (d.qty !== undefined ? d.qty : (d.nos !== undefined ? d.nos : 1))) || 0,
-        rate: parseFloat(d.rate !== undefined ? d.rate : (d.price !== undefined ? d.price : 0)) || 0,
-        notes: d.notes || d.remark || ''
-    })) : [];
+    const cleanDoors = Array.isArray(rawDoors) ? rawDoors.map((d, i) => {
+        const doorType = d.doorType || d.type || d.description || 'DOOR';
+        const flushSpec = d.flushDoorType || d.flush || d.flushSpec || '';
+        const notes = d.notes || d.remark || '';
+        const category = d.category || detectDoorCategoryJs(doorType, flushSpec, notes);
+        return {
+            id: d.id || ('door-' + (Date.now() + i)),
+            category: category,
+            doorType: doorType,
+            flushDoorType: flushSpec,
+            designNo: d.designNo || d.design || '',
+            thickness: d.thickness || d.thick || '',
+            height: parseFloat(d.height !== undefined ? d.height : (d.h !== undefined ? d.h : 0)) || 0,
+            width: parseFloat(d.width !== undefined ? d.width : (d.w !== undefined ? d.w : 0)) || 0,
+            quantity: parseInt(d.quantity !== undefined ? d.quantity : (d.qty !== undefined ? d.qty : (d.nos !== undefined ? d.nos : 1))) || 0,
+            rate: parseFloat(d.rate !== undefined ? d.rate : (d.price !== undefined ? d.price : 0)) || 0,
+            notes: notes
+        };
+    }) : [];
 
     // WPC Frames: if not present in new party, completely empty array!
     const rawFrames = (est.hasWpcFrames === false) ? [] : (est.wpcFrames || est.frames || est.wpc_frames || est.wpc || []);
@@ -506,6 +750,10 @@ function loadEstimateIntoForm(est) {
 
     document.getElementById('activeOrderBadge').innerText = activeEstimate.orderNumber;
 
+    // Update active party context & badge
+    updateActivePartyContext(activeEstimate.partyName);
+
+
     // Render Doors Table
     renderDoorsTable();
 
@@ -533,22 +781,48 @@ function renderDoorsTable() {
     tbody.innerHTML = '';
 
     if (!activeEstimate.doors || activeEstimate.doors.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:20px; color:#94a3b8;">No doors added. Click "+ Add Door Item" above.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="14" style="text-align:center; padding:20px; color:#94a3b8;">No doors added. Click "+ Add Door Item" or quick category buttons above.</td></tr>`;
         return;
     }
+
+    // Build unique categories list (standard + any active party custom categories)
+    const partyCats = activePartyPricing && activePartyPricing.doorRates ? Object.keys(activePartyPricing.doorRates) : [];
+    const allCategories = Array.from(new Set([...STANDARD_DOOR_CATEGORIES, ...partyCats])).filter(Boolean);
 
     activeEstimate.doors.forEach((door, index) => {
         const tr = document.createElement('tr');
         const h = parseFloat(door.height) || 0;
         const w = parseFloat(door.width) || 0;
         const qty = parseInt(door.quantity) || 0;
-        const rate = parseFloat(door.rate) || 0;
+        let rate = parseFloat(door.rate) || 0;
+
+        const curCat = door.category || detectDoorCategoryJs(door.doorType, door.flushDoorType, door.notes);
+        door.category = curCat;
+
+        // Auto-fill party-specific rate if zero
+        if (rate === 0) {
+            const pRate = getPartyDoorRate(curCat);
+            if (pRate > 0) {
+                door.rate = pRate;
+                rate = pRate;
+            }
+        }
 
         const sqft = ((h * w * qty) / 144);
         const amount = sqft * rate;
 
+        const categoryOptions = allCategories.map(c => `
+            <option value="${escapeHtml(c)}" ${c.toLowerCase() === curCat.toLowerCase() ? 'selected' : ''}>${escapeHtml(c)}</option>
+        `).join('');
+
         tr.innerHTML = `
             <td style="font-weight:700; color:#64748b;">${index + 1}</td>
+            <td>
+                <select class="form-control" style="font-weight:700; font-size:12px; padding:4px 6px; color:#1e1b4b; background:#f8fafc;" onchange="updateDoorCategory(${index}, this.value)">
+                    ${categoryOptions}
+                    ${!allCategories.map(x=>x.toLowerCase()).includes(curCat.toLowerCase()) ? `<option value="${escapeHtml(curCat)}" selected>${escapeHtml(curCat)}</option>` : ''}
+                </select>
+            </td>
             <td>
                 <input type="text" class="form-control" value="${escapeHtml(door.doorType || '')}" placeholder="e.g. PRIMER COATED DOOR" oninput="updateDoorField(${index}, 'doorType', this.value)">
             </td>
@@ -574,7 +848,7 @@ function renderDoorsTable() {
                 ${sqft.toFixed(2)}
             </td>
             <td>
-                <input type="number" step="any" class="form-control num-cell" value="${rate || ''}" placeholder="₹/sqft" oninput="updateDoorField(${index}, 'rate', this.value)">
+                <input type="number" step="any" class="form-control num-cell" style="font-weight:700; color:#1e1b4b;" value="${door.rate || ''}" placeholder="₹/sqft" oninput="updateDoorField(${index}, 'rate', this.value)">
             </td>
             <td class="num-cell" style="font-family:var(--font-mono); font-weight:700; color:#4338ca;" id="door_amt_${index}">
                 ₹ ${amount.toFixed(2)}
@@ -597,6 +871,28 @@ function renderDoorsTable() {
     });
 }
 
+function updateDoorCategory(index, newCategory) {
+    if (!activeEstimate.doors[index]) return;
+    const oldCat = activeEstimate.doors[index].category || '';
+    activeEstimate.doors[index].category = newCategory;
+
+    // Update doorType label if appropriate
+    const curType = (activeEstimate.doors[index].doorType || '').trim();
+    if (!curType || (curType.toUpperCase().includes('DOOR') && oldCat && curType.toLowerCase().includes(oldCat.toLowerCase()))) {
+        activeEstimate.doors[index].doorType = newCategory.toUpperCase() + ' DOOR';
+    }
+
+    // Auto-fill party-specific rate for this category!
+    const partyRate = getPartyDoorRate(newCategory);
+    if (partyRate > 0) {
+        activeEstimate.doors[index].rate = partyRate;
+    }
+
+    renderDoorsTable();
+    calculateAll();
+    syncA5PrintArea();
+}
+
 function updateDoorField(index, field, value) {
     if (!activeEstimate.doors[index]) return;
 
@@ -604,6 +900,13 @@ function updateDoorField(index, field, value) {
         activeEstimate.doors[index][field] = parseFloat(value) || 0;
     } else {
         activeEstimate.doors[index][field] = value;
+    }
+
+    if (field === 'rate') {
+        const cat = activeEstimate.doors[index].category;
+        if (cat) {
+            setPartyDoorRateInMemory(cat, activeEstimate.doors[index].rate);
+        }
     }
 
     // Update dimensions string
@@ -626,22 +929,29 @@ function updateDoorField(index, field, value) {
     calculateAll();
 }
 
-function addDoorRow() {
+function addDoorRow(prefilledCategory = null) {
     if (!activeEstimate.doors) activeEstimate.doors = [];
+    const cat = prefilledCategory || 'Primer';
+    const rate = getPartyDoorRate(cat) || 125;
     activeEstimate.doors.push({
         id: 'door-' + Date.now(),
-        doorType: 'PRIMER COATED DOOR',
+        category: cat,
+        doorType: cat.toUpperCase() + ' DOOR',
         flushDoorType: 'PINE FRAME -SC',
         designNo: 'WS-17',
         thickness: '38MM',
         height: 79,
         width: 38,
         quantity: 1,
-        rate: 125,
+        rate: rate,
         notes: ''
     });
     renderDoorsTable();
     calculateAll();
+}
+
+function quickAddDoorCategory(cat) {
+    addDoorRow(cat);
 }
 
 function duplicateDoor(index) {
@@ -661,24 +971,11 @@ function deleteDoor(index) {
 /* ========================================================
    WPC FRAMES DYNAMIC ROWS & CALCULATIONS
    Formula: RFT = Quantity * Length(feet)
-   Example: 7ft x 2 nos = 14 RFT; 3ft x 1 nos = 3 RFT
    Amount = RFT * Rate
    ======================================================== */
 
 function enableAndAddWpcFrame() {
-    if (!activeEstimate.wpcFrames) activeEstimate.wpcFrames = [];
-    activeEstimate.wpcFrames.push({
-        id: 'frame-' + Date.now(),
-        frameType: 'WPC FRAME (IVORY)',
-        section: '3x2',
-        lengthFeet: 7,
-        quantity: 2,
-        rate: 65,
-        notes: ''
-    });
-    renderFramesTable();
-    calculateAll();
-    syncA5PrintArea();
+    addFrameRow('3x2', 7);
 }
 
 function renderFramesTable() {
@@ -710,7 +1007,17 @@ function renderFramesTable() {
         const tr = document.createElement('tr');
         const len = parseFloat(frame.lengthFeet) || 0;
         const qty = parseInt(frame.quantity) || 0;
-        const rate = parseFloat(frame.rate) || 0;
+        let rate = parseFloat(frame.rate) || 0;
+        const sec = frame.section || '3x2';
+
+        // Auto-fill party frame rate if 0
+        if (rate === 0) {
+            const pRate = getPartyFrameRate(sec);
+            if (pRate > 0) {
+                frame.rate = pRate;
+                rate = pRate;
+            }
+        }
 
         const rft = len * qty;
         const amount = rft * rate;
@@ -718,15 +1025,15 @@ function renderFramesTable() {
         tr.innerHTML = `
             <td style="font-weight:700; color:#64748b;">${index + 1}</td>
             <td>
-                <input type="text" class="form-control" value="${escapeHtml(frame.frameType || '')}" placeholder="e.g. WPC FRAME (IVORY)-(A)" oninput="updateFrameField(${index}, 'frameType', this.value)">
+                <input type="text" class="form-control" value="${escapeHtml(frame.frameType || '')}" placeholder="e.g. WPC FRAME (IVORY)" oninput="updateFrameField(${index}, 'frameType', this.value)">
             </td>
             <td>
-                <select class="form-control" onchange="updateFrameField(${index}, 'section', this.value)">
-                    <option value="3x2" ${frame.section === '3x2' ? 'selected' : ''}>3 x 2</option>
-                    <option value="4x2" ${frame.section === '4x2' ? 'selected' : ''}>4 x 2</option>
-                    <option value="4x2.5" ${frame.section === '4x2.5' ? 'selected' : ''}>4 x 2.5</option>
-                    <option value="5x2.5" ${frame.section === '5x2.5' ? 'selected' : ''}>5 x 2.5</option>
-                    <option value="custom" ${!['3x2','4x2','4x2.5','5x2.5'].includes(frame.section) ? 'selected' : ''}>Custom</option>
+                <select class="form-control" style="font-weight:700; color:#1e1b4b;" onchange="updateFrameField(${index}, 'section', this.value)">
+                    <option value="3x2" ${sec === '3x2' ? 'selected' : ''}>3 x 2</option>
+                    <option value="4x2" ${sec === '4x2' ? 'selected' : ''}>4 x 2</option>
+                    <option value="4x2.5" ${sec === '4x2.5' ? 'selected' : ''}>4 x 2.5</option>
+                    <option value="5x2.5" ${sec === '5x2.5' ? 'selected' : ''}>5 x 2.5</option>
+                    <option value="custom" ${!['3x2','4x2','4x2.5','5x2.5'].includes(sec) ? 'selected' : ''}>Custom</option>
                 </select>
             </td>
             <td>
@@ -739,7 +1046,7 @@ function renderFramesTable() {
                 ${rft.toFixed(2)}
             </td>
             <td>
-                <input type="number" step="any" class="form-control num-cell" value="${rate || ''}" placeholder="₹/Rft" oninput="updateFrameField(${index}, 'rate', this.value)">
+                <input type="number" step="any" class="form-control num-cell" style="font-weight:700; color:#1e1b4b;" value="${frame.rate || ''}" placeholder="₹/Rft" oninput="updateFrameField(${index}, 'rate', this.value)">
             </td>
             <td class="num-cell" style="font-family:var(--font-mono); font-weight:700; color:#4338ca;" id="frame_amt_${index}">
                 ₹ ${amount.toFixed(2)}
@@ -771,6 +1078,19 @@ function updateFrameField(index, field, value) {
         activeEstimate.wpcFrames[index][field] = value;
     }
 
+    if (field === 'section') {
+        const partyRate = getPartyFrameRate(value);
+        if (partyRate > 0) {
+            activeEstimate.wpcFrames[index].rate = partyRate;
+        }
+        renderFramesTable();
+    }
+
+    if (field === 'rate') {
+        const sec = activeEstimate.wpcFrames[index].section || '3x2';
+        setPartyFrameRateInMemory(sec, activeEstimate.wpcFrames[index].rate);
+    }
+
     const len = activeEstimate.wpcFrames[index].lengthFeet || 0;
     const qty = activeEstimate.wpcFrames[index].quantity || 0;
     const rate = activeEstimate.wpcFrames[index].rate || 0;
@@ -790,21 +1110,27 @@ function updateFrameField(index, field, value) {
     calculateAll();
 }
 
-function addFrameRow() {
+function addFrameRow(prefilledSection = '3x2', prefilledLength = 7) {
     if (!activeEstimate.wpcFrames) activeEstimate.wpcFrames = [];
+    const rate = getPartyFrameRate(prefilledSection) || 65;
     activeEstimate.wpcFrames.push({
         id: 'frame-' + Date.now(),
-        frameType: 'WPC FRAME (IVORY)',
-        section: '3x2',
-        lengthFeet: 7,
+        frameType: `WPC FRAME (IVORY) - ${prefilledSection}`,
+        section: prefilledSection,
+        lengthFeet: prefilledLength,
         quantity: 2,
-        rate: 65,
+        rate: rate,
         notes: ''
     });
     renderFramesTable();
     calculateAll();
     syncA5PrintArea();
 }
+
+function quickAddFrameSection(section, length = 7) {
+    addFrameRow(section, length);
+}
+
 
 function duplicateFrame(index) {
     const clone = JSON.parse(JSON.stringify(activeEstimate.wpcFrames[index]));
@@ -1014,11 +1340,23 @@ async function saveActiveEstimate() {
         const data = await res.json();
 
         if (data.success) {
-            alert('Estimate successfully saved and encrypted!');
+            if (data.party) {
+                activePartyPricing = data.party;
+                const pIdx = memorizedParties.findIndex(p => p.id === data.party.id || p.partyName.toLowerCase() === data.party.partyName.toLowerCase());
+                if (pIdx !== -1) {
+                    memorizedParties[pIdx] = data.party;
+                } else {
+                    memorizedParties.unshift(data.party);
+                }
+                updatePartySuggestionsDatalist();
+                updatePartyBadge(data.party);
+            }
+            alert('Estimate successfully saved and encrypted!\nParty custom rates memorized.');
             loadEstimates();
         } else {
             alert('Failed to save: ' + (data.message || 'Unknown error'));
         }
+
     } catch (err) {
         alert('Network error while saving estimate.');
     }
@@ -1424,14 +1762,20 @@ async function submitImportJson() {
             closeImportModal();
             // Completely clear old party data and render the new party fresh!
             loadEstimateIntoForm(data.estimate);
-            // Refresh saved history list in background without disturbing the active form
-            await refreshSavedEstimatesList();
-            alert('New party JSON imported successfully!\nAll old party data cleared and rendered completely fresh.');
+            // Refresh saved history list and parties list in background
+            await Promise.all([
+                refreshSavedEstimatesList(),
+                loadParties()
+            ]);
+            alert('New party JSON imported successfully!\nAll old party data cleared, new party rendered fresh, and party rates memorized.');
         } else if (data.success) {
             closeImportModal();
             loadEstimateIntoForm(parsed);
-            await refreshSavedEstimatesList();
-            alert('JSON imported successfully!');
+            await Promise.all([
+                refreshSavedEstimatesList(),
+                loadParties()
+            ]);
+            alert('JSON imported successfully and party rates memorized!');
         } else {
             alert('Import failed: ' + (data.message || 'Unknown error'));
         }
@@ -1441,8 +1785,369 @@ async function submitImportJson() {
 }
 
 /* ========================================================
+   PARTY MASTER & PRICE CARDS MODAL MANAGEMENT
+   ======================================================== */
+
+async function openPartiesModal(targetPartyId = null) {
+    await loadParties();
+    const countBadge = document.getElementById('partiesCountBadge');
+    if (countBadge) countBadge.innerText = memorizedParties.length;
+    renderPartySidebar();
+
+    let target = null;
+    if (targetPartyId) {
+        target = memorizedParties.find(p => p.id === targetPartyId || p.partyName.toLowerCase() === targetPartyId.toLowerCase());
+    }
+    if (!target && activeEstimate && activeEstimate.partyName) {
+        target = memorizedParties.find(p => p.partyName.toLowerCase() === activeEstimate.partyName.toLowerCase());
+    }
+    if (!target && memorizedParties.length > 0) {
+        target = memorizedParties[0];
+    }
+
+    if (target) {
+        selectPartyInModal(target.id);
+    } else {
+        createNewPartyForm();
+    }
+
+    document.getElementById('partiesModal').classList.add('active');
+}
+
+function closePartiesModal() {
+    document.getElementById('partiesModal').classList.remove('active');
+}
+
+function renderPartySidebar(filtered = null) {
+    const list = filtered || memorizedParties;
+    const container = document.getElementById('partyListContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (list.length === 0) {
+        container.innerHTML = `<div style="font-size:12px; color:#94a3b8; padding:12px; text-align:center;">No parties found.</div>`;
+        return;
+    }
+
+    list.forEach(party => {
+        const item = document.createElement('div');
+        item.className = 'party-card-item' + (party.id === selectedModalPartyId ? ' active' : '');
+        const dCount = Object.keys(party.doorRates || {}).length;
+        const fCount = Object.keys(party.frameRates || {}).length;
+
+        item.innerHTML = `
+            <div class="party-card-name">
+                <span>${escapeHtml(party.partyName)}</span>
+                <span style="font-size:10.5px; background:#e0e7ff; color:#3730a3; padding:1px 5px; border-radius:4px; font-weight:700;">${dCount + fCount} rates</span>
+            </div>
+            <div class="party-card-meta">
+                ${party.partyMobile ? `📞 ${escapeHtml(party.partyMobile)}` : 'No mobile'}
+            </div>
+            ${party.partyAddress ? `<div class="party-card-meta" style="font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">📍 ${escapeHtml(party.partyAddress)}</div>` : ''}
+        `;
+        item.onclick = () => selectPartyInModal(party.id);
+        container.appendChild(item);
+    });
+}
+
+function filterPartiesList(query) {
+    const q = (query || '').toLowerCase().trim();
+    if (!q) {
+        renderPartySidebar();
+        return;
+    }
+    const filtered = memorizedParties.filter(p => 
+        p.partyName.toLowerCase().includes(q) || 
+        (p.partyMobile && p.partyMobile.includes(q)) || 
+        (p.partyAddress && p.partyAddress.toLowerCase().includes(q))
+    );
+    renderPartySidebar(filtered);
+}
+
+function selectPartyInModal(partyId) {
+    selectedModalPartyId = partyId;
+    const party = memorizedParties.find(p => p.id === partyId);
+    if (!party) return;
+
+    renderPartySidebar();
+
+    document.getElementById('editorPartyTitle').innerText = party.partyName;
+    document.getElementById('editorPartySub').innerText = `Last updated: ${party.updated_at || party.lastOrderDate || 'Recently'}`;
+    document.getElementById('editPartyName').value = party.partyName;
+    document.getElementById('editPartyMobile').value = party.partyMobile || '';
+    document.getElementById('editPartyAddress').value = party.partyAddress || '';
+    document.getElementById('editPartyNotes').value = party.notes || '';
+    document.getElementById('btnDeleteParty').style.display = 'inline-block';
+
+    renderDoorRatesGrid(party.doorRates || {});
+    renderFrameRatesGrid(party.frameRates || {});
+}
+
+function createNewPartyForm() {
+    selectedModalPartyId = null;
+    renderPartySidebar();
+
+    document.getElementById('editorPartyTitle').innerText = 'Create New Party';
+    document.getElementById('editorPartySub').innerText = 'Setup party details and define custom pricing rates';
+    document.getElementById('editPartyName').value = '';
+    document.getElementById('editPartyMobile').value = '';
+    document.getElementById('editPartyAddress').value = '';
+    document.getElementById('editPartyNotes').value = '';
+    document.getElementById('btnDeleteParty').style.display = 'none';
+
+    // Baseline rates for a new party
+    const baseDoorRates = {
+        'Primer': 125,
+        'Laminate': 250,
+        'Membrane': 195,
+        'Microcoating': 180,
+        'WPC': 140,
+        'UV Coating': 220,
+        'Veneer': 320,
+        'Flush Door': 110,
+        'Teak Wood': 450
+    };
+    const baseFrameRates = {
+        '3x2': 65,
+        '4x2': 125,
+        '4x2.5': 145,
+        '5x2.5': 180
+    };
+    renderDoorRatesGrid(baseDoorRates);
+    renderFrameRatesGrid(baseFrameRates);
+}
+
+function renderDoorRatesGrid(rates) {
+    const grid = document.getElementById('doorRatesGrid');
+    grid.innerHTML = '';
+
+    const allCategories = Array.from(new Set([...STANDARD_DOOR_CATEGORIES, ...Object.keys(rates)])).filter(Boolean);
+
+    allCategories.forEach(cat => {
+        const val = rates[cat] !== undefined ? rates[cat] : '';
+        const card = document.createElement('div');
+        card.className = 'rate-box-card';
+        card.innerHTML = `
+            <div class="rate-box-label">
+                <span>${escapeHtml(cat)}</span>
+                <span style="font-weight:400; color:#64748b;">₹/sqft</span>
+            </div>
+            <input type="number" step="any" class="form-control num-cell rate-box-input modal-door-rate-input" data-category="${escapeHtml(cat)}" value="${val}" placeholder="0.00">
+        `;
+        grid.appendChild(card);
+    });
+}
+
+function renderFrameRatesGrid(rates) {
+    const grid = document.getElementById('frameRatesGrid');
+    grid.innerHTML = '';
+
+    const allSections = Array.from(new Set([...STANDARD_FRAME_SECTIONS, ...Object.keys(rates)])).filter(Boolean);
+
+    allSections.forEach(sec => {
+        const val = rates[sec] !== undefined ? rates[sec] : '';
+        const card = document.createElement('div');
+        card.className = 'rate-box-card';
+        card.innerHTML = `
+            <div class="rate-box-label">
+                <span>${escapeHtml(sec)}</span>
+                <span style="font-weight:400; color:#64748b;">₹/Rft</span>
+            </div>
+            <input type="number" step="any" class="form-control num-cell rate-box-input modal-frame-rate-input" data-section="${escapeHtml(sec)}" value="${val}" placeholder="0.00">
+        `;
+        grid.appendChild(card);
+    });
+}
+
+function addCustomDoorCategoryRate() {
+    const nameInput = document.getElementById('newDoorCategoryName');
+    const rateInput = document.getElementById('newDoorCategoryRate');
+    const name = nameInput.value.trim();
+    const rate = parseFloat(rateInput.value) || 0;
+
+    if (!name) {
+        alert('Please enter a door category name.');
+        return;
+    }
+
+    const grid = document.getElementById('doorRatesGrid');
+    const existing = grid.querySelector(`[data-category="${name}"]`);
+    if (existing) {
+        existing.value = rate;
+        existing.focus();
+    } else {
+        const card = document.createElement('div');
+        card.className = 'rate-box-card';
+        card.innerHTML = `
+            <div class="rate-box-label">
+                <span>${escapeHtml(name)}</span>
+                <span style="font-weight:400; color:#64748b;">₹/sqft</span>
+            </div>
+            <input type="number" step="any" class="form-control num-cell rate-box-input modal-door-rate-input" data-category="${escapeHtml(name)}" value="${rate}" placeholder="0.00">
+        `;
+        grid.appendChild(card);
+    }
+
+    nameInput.value = '';
+    rateInput.value = '';
+}
+
+function addCustomFrameSectionRate() {
+    const nameInput = document.getElementById('newFrameSectionName');
+    const rateInput = document.getElementById('newFrameSectionRate');
+    const sec = nameInput.value.trim();
+    const rate = parseFloat(rateInput.value) || 0;
+
+    if (!sec) {
+        alert('Please enter a frame section size (e.g. 6x2.5).');
+        return;
+    }
+
+    const grid = document.getElementById('frameRatesGrid');
+    const existing = grid.querySelector(`[data-section="${sec}"]`);
+    if (existing) {
+        existing.value = rate;
+        existing.focus();
+    } else {
+        const card = document.createElement('div');
+        card.className = 'rate-box-card';
+        card.innerHTML = `
+            <div class="rate-box-label">
+                <span>${escapeHtml(sec)}</span>
+                <span style="font-weight:400; color:#64748b;">₹/Rft</span>
+            </div>
+            <input type="number" step="any" class="form-control num-cell rate-box-input modal-frame-rate-input" data-section="${escapeHtml(sec)}" value="${rate}" placeholder="0.00">
+        `;
+        grid.appendChild(card);
+    }
+
+    nameInput.value = '';
+    rateInput.value = '';
+}
+
+async function savePartyFromModal() {
+    const name = document.getElementById('editPartyName').value.trim();
+    if (!name) {
+        alert('Party Name is required.');
+        document.getElementById('editPartyName').focus();
+        return;
+    }
+
+    const mobile = document.getElementById('editPartyMobile').value.trim();
+    const address = document.getElementById('editPartyAddress').value.trim();
+    const notes = document.getElementById('editPartyNotes').value.trim();
+
+    // Collect door rates
+    const doorRates = {};
+    document.querySelectorAll('.modal-door-rate-input').forEach(inp => {
+        const cat = inp.getAttribute('data-category');
+        const val = parseFloat(inp.value);
+        if (cat && !isNaN(val) && val > 0) {
+            doorRates[cat] = val;
+        }
+    });
+
+    // Collect frame rates
+    const frameRates = {};
+    document.querySelectorAll('.modal-frame-rate-input').forEach(inp => {
+        const sec = inp.getAttribute('data-section');
+        const val = parseFloat(inp.value);
+        if (sec && !isNaN(val) && val > 0) {
+            frameRates[sec] = val;
+        }
+    });
+
+    const partyPayload = {
+        id: selectedModalPartyId || undefined,
+        partyName: name,
+        partyMobile: mobile,
+        partyAddress: address,
+        notes: notes,
+        doorRates: doorRates,
+        frameRates: frameRates
+    };
+
+    try {
+        const res = await fetch('api.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'save_party', party: partyPayload })
+        });
+        const data = await res.json();
+        if (data.success) {
+            memorizedParties = data.parties || memorizedParties;
+            selectedModalPartyId = data.party.id;
+            updatePartySuggestionsDatalist();
+            renderPartySidebar();
+
+            // If active estimate is for this party, update active context
+            if (activeEstimate && activeEstimate.partyName && activeEstimate.partyName.toLowerCase() === name.toLowerCase()) {
+                activePartyPricing = data.party;
+                updatePartyBadge(data.party);
+            }
+
+            alert(`Party "${name}" & custom price sheet saved successfully!`);
+        } else {
+            alert('Failed to save party: ' + (data.message || 'Unknown error'));
+        }
+    } catch (err) {
+        alert('Network error while saving party.');
+    }
+}
+
+function applyPartyToActiveEstimate() {
+    const name = document.getElementById('editPartyName').value.trim();
+    if (!name) {
+        alert('Party Name is empty.');
+        return;
+    }
+
+    document.getElementById('partyName').value = name;
+    const mobile = document.getElementById('editPartyMobile').value.trim();
+    if (mobile) document.getElementById('partyMobile').value = mobile;
+    const address = document.getElementById('editPartyAddress').value.trim();
+    if (address) document.getElementById('partyAddress').value = address;
+
+    onPartyNameSelected(name);
+    closePartiesModal();
+}
+
+async function deletePartyFromModal() {
+    if (!selectedModalPartyId) return;
+    const party = memorizedParties.find(p => p.id === selectedModalPartyId);
+    if (!party) return;
+
+    if (!confirm(`Are you sure you want to delete "${party.partyName}" from the Party Directory?`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch('api.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'delete_party', id: party.id })
+        });
+        const data = await res.json();
+        if (data.success) {
+            memorizedParties = data.parties || [];
+            updatePartySuggestionsDatalist();
+            if (memorizedParties.length > 0) {
+                selectPartyInModal(memorizedParties[0].id);
+            } else {
+                createNewPartyForm();
+            }
+        } else {
+            alert('Failed to delete: ' + (data.message || ''));
+        }
+    } catch (e) {
+        alert('Network error.');
+    }
+}
+
+/* ========================================================
    UTILITY HELPERS
    ======================================================== */
+
 
 function escapeHtml(text) {
     if (!text) return '';

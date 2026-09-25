@@ -11,6 +11,43 @@ if (session_status() === PHP_SESSION_NONE) {
 define('DATA_DIR', __DIR__ . '/.data');
 define('CONFIG_FILE', DATA_DIR . '/config.enc.json');
 define('ESTIMATES_FILE', DATA_DIR . '/estimates.enc.json');
+define('PARTIES_FILE', DATA_DIR . '/parties.enc.json');
+
+// Standard recognized Door Categories (per user requirements)
+function getStandardDoorCategories() {
+    return [
+        'Microcoating',
+        'Membrane',
+        'Primer',
+        'Laminate',
+        'WPC',
+        'UV Coating',
+        'Veneer',
+        'Flush Door',
+        'Teak Wood'
+    ];
+}
+
+// Standard recognized WPC Frame Section Sizes
+function getStandardFrameSections() {
+    return ['3x2', '4x2', '4x2.5', '5x2.5'];
+}
+
+// Intelligent helper to detect door category from description/type strings
+function detectDoorCategory($doorType = '', $flushSpec = '', $notes = '') {
+    $text = strtolower(trim(($doorType ?? '') . ' ' . ($flushSpec ?? '') . ' ' . ($notes ?? '')));
+    if (strpos($text, 'micro') !== false) return 'Microcoating';
+    if (strpos($text, 'uv') !== false) return 'UV Coating';
+    if (strpos($text, 'membrane') !== false) return 'Membrane';
+    if (strpos($text, 'primer') !== false) return 'Primer';
+    if (strpos($text, 'laminat') !== false) return 'Laminate';
+    if (strpos($text, 'wpc') !== false) return 'WPC';
+    if (strpos($text, 'veneer') !== false) return 'Veneer';
+    if (strpos($text, 'teak') !== false) return 'Teak Wood';
+    if (strpos($text, 'flush') !== false) return 'Flush Door';
+    return 'Other';
+}
+
 
 // Ensure hidden data directory exists and is protected from direct web access
 function ensureDataDirectory() {
@@ -162,6 +199,217 @@ function saveEstimates($estimates, $masterKey) {
     $enc = encryptData($json, $masterKey);
     return file_put_contents(ESTIMATES_FILE, $enc) !== false;
 }
+
+/**
+ * Get Decrypted Parties Master List
+ */
+function getParties($masterKey) {
+    ensureDataDirectory();
+    if (!file_exists(PARTIES_FILE)) {
+        return seedPartiesFromEstimates($masterKey);
+    }
+    $encData = file_get_contents(PARTIES_FILE);
+    if (empty($encData)) {
+        return seedPartiesFromEstimates($masterKey);
+    }
+    $json = decryptData($encData, $masterKey);
+    if ($json === false) {
+        return [];
+    }
+    $parties = json_decode($json, true);
+    return is_array($parties) ? $parties : [];
+}
+
+/**
+ * Save Encrypted Parties Master List
+ */
+function saveParties($parties, $masterKey) {
+    ensureDataDirectory();
+    $json = json_encode($parties, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    $enc = encryptData($json, $masterKey);
+    return file_put_contents(PARTIES_FILE, $enc) !== false;
+}
+
+/**
+ * Auto-Seed Party Directory and Rates from Historical Estimates & Default Sample
+ */
+function seedPartiesFromEstimates($masterKey) {
+    $parties = [];
+    $estimates = getEstimates($masterKey) ?: [];
+
+    // Ensure RK-KISHAN baseline exists with realistic sample rates
+    $rkKishan = [
+        'id' => 'party-rk-kishan',
+        'partyName' => 'RK-KISHAN',
+        'partyMobile' => '9019711881',
+        'partyAddress' => '',
+        'doorRates' => [
+            'Microcoating' => 180,
+            'Membrane' => 195,
+            'Primer' => 125,
+            'Laminate' => 250,
+            'WPC' => 140,
+            'UV Coating' => 220,
+            'Veneer' => 320,
+            'Flush Door' => 110,
+            'Teak Wood' => 450
+        ],
+        'frameRates' => [
+            '3x2' => 65,
+            '4x2' => 125,
+            '4x2.5' => 145,
+            '5x2.5' => 180
+        ],
+        'notes' => 'Primary verified party with custom price card',
+        'lastOrderDate' => '2026-09-24',
+        'created_at' => date('Y-m-d H:i:s'),
+        'updated_at' => date('Y-m-d H:i:s')
+    ];
+    $parties[] = $rkKishan;
+
+    // Scan any existing estimates to extract other parties and their actual rates
+    foreach ($estimates as $est) {
+        $name = trim($est['partyName'] ?? '');
+        if (empty($name)) continue;
+
+        // Find or create
+        $foundIdx = -1;
+        foreach ($parties as $idx => $p) {
+            if (strcasecmp($p['partyName'], $name) === 0) {
+                $foundIdx = $idx;
+                break;
+            }
+        }
+
+        if ($foundIdx === -1) {
+            $parties[] = [
+                'id' => 'party-' . substr(md5($name), 0, 10),
+                'partyName' => $name,
+                'partyMobile' => trim($est['partyMobile'] ?? ''),
+                'partyAddress' => trim($est['partyAddress'] ?? ''),
+                'doorRates' => [],
+                'frameRates' => [],
+                'notes' => '',
+                'lastOrderDate' => $est['orderDate'] ?? date('Y-m-d'),
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s')
+            ];
+            $foundIdx = count($parties) - 1;
+        }
+
+        // Update mobile/address if empty
+        if (!empty($est['partyMobile']) && empty($parties[$foundIdx]['partyMobile'])) {
+            $parties[$foundIdx]['partyMobile'] = trim($est['partyMobile']);
+        }
+        if (!empty($est['partyAddress']) && empty($parties[$foundIdx]['partyAddress'])) {
+            $parties[$foundIdx]['partyAddress'] = trim($est['partyAddress']);
+        }
+
+        // Collect door rates
+        foreach (($est['doors'] ?? []) as $d) {
+            $cat = detectDoorCategory($d['doorType'] ?? '', $d['flushDoorType'] ?? '', $d['notes'] ?? '');
+            $rate = (float)($d['rate'] ?? 0);
+            if ($rate > 0) {
+                $parties[$foundIdx]['doorRates'][$cat] = $rate;
+            }
+        }
+
+        // Collect frame rates
+        foreach (($est['wpcFrames'] ?? []) as $f) {
+            $sec = trim($f['section'] ?? '3x2');
+            $rate = (float)($f['rate'] ?? 0);
+            if ($rate > 0 && !empty($sec)) {
+                $parties[$foundIdx]['frameRates'][$sec] = $rate;
+            }
+        }
+
+        if (!empty($est['orderDate'])) {
+            $parties[$foundIdx]['lastOrderDate'] = $est['orderDate'];
+        }
+    }
+
+    saveParties($parties, $masterKey);
+    return $parties;
+}
+
+/**
+ * Upsert Party Profile and Custom Price Sheet
+ */
+function upsertPartyRecord($partyData, $masterKey) {
+    $parties = getParties($masterKey);
+    $name = trim($partyData['partyName'] ?? '');
+    if (empty($name)) {
+        return false;
+    }
+
+    $foundIdx = -1;
+    foreach ($parties as $idx => $p) {
+        if (strcasecmp($p['partyName'], $name) === 0) {
+            $foundIdx = $idx;
+            break;
+        }
+    }
+
+    $now = date('Y-m-d H:i:s');
+    if ($foundIdx !== -1) {
+        // Update existing party
+        if (!empty($partyData['partyMobile'])) {
+            $parties[$foundIdx]['partyMobile'] = trim($partyData['partyMobile']);
+        }
+        if (isset($partyData['partyAddress'])) {
+            $parties[$foundIdx]['partyAddress'] = trim($partyData['partyAddress']);
+        }
+        if (isset($partyData['notes'])) {
+            $parties[$foundIdx]['notes'] = trim($partyData['notes']);
+        }
+        if (!empty($partyData['orderDate'])) {
+            $parties[$foundIdx]['lastOrderDate'] = $partyData['orderDate'];
+        }
+
+        // Merge door rates
+        if (!empty($partyData['doorRates']) && is_array($partyData['doorRates'])) {
+            foreach ($partyData['doorRates'] as $cat => $rate) {
+                $r = (float)$rate;
+                if ($r > 0) {
+                    $parties[$foundIdx]['doorRates'][$cat] = $r;
+                }
+            }
+        }
+
+        // Merge frame rates
+        if (!empty($partyData['frameRates']) && is_array($partyData['frameRates'])) {
+            foreach ($partyData['frameRates'] as $sec => $rate) {
+                $r = (float)$rate;
+                if ($r > 0) {
+                    $parties[$foundIdx]['frameRates'][$sec] = $r;
+                }
+            }
+        }
+
+        $parties[$foundIdx]['updated_at'] = $now;
+        $activeParty = $parties[$foundIdx];
+    } else {
+        // Create new party
+        $newParty = [
+            'id' => $partyData['id'] ?? ('party-' . time() . '-' . rand(100, 999)),
+            'partyName' => $name,
+            'partyMobile' => trim($partyData['partyMobile'] ?? ''),
+            'partyAddress' => trim($partyData['partyAddress'] ?? ''),
+            'doorRates' => is_array($partyData['doorRates'] ?? null) ? $partyData['doorRates'] : [],
+            'frameRates' => is_array($partyData['frameRates'] ?? null) ? $partyData['frameRates'] : [],
+            'notes' => trim($partyData['notes'] ?? ''),
+            'lastOrderDate' => $partyData['orderDate'] ?? date('Y-m-d'),
+            'created_at' => $now,
+            'updated_at' => $now
+        ];
+        array_unshift($parties, $newParty);
+        $activeParty = $newParty;
+    }
+
+    saveParties($parties, $masterKey);
+    return $activeParty;
+}
+
 
 /**
  * Verify PIN password

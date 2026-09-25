@@ -124,6 +124,62 @@ if ($action === 'get_estimates') {
     exit;
 }
 
+// Get all memorized parties & their custom price sheets
+if ($action === 'get_parties') {
+    $parties = getParties($masterKey) ?: [];
+    echo json_encode([
+        'success' => true,
+        'parties' => $parties,
+        'standard_categories' => getStandardDoorCategories(),
+        'standard_sections' => getStandardFrameSections()
+    ]);
+    exit;
+}
+
+// Save or Update a Party Profile & Price Sheet directly
+if ($action === 'save_party') {
+    $partyData = $data['party'] ?? null;
+    if (!$partyData || empty(trim($partyData['partyName'] ?? ''))) {
+        echo json_encode(['success' => false, 'message' => 'Party Name is required.']);
+        exit;
+    }
+
+    $savedParty = upsertPartyRecord($partyData, $masterKey);
+    if ($savedParty) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Party profile and custom price card saved.',
+            'party' => $savedParty,
+            'parties' => getParties($masterKey)
+        ]);
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Failed to save party record.']);
+    }
+    exit;
+}
+
+// Delete Party from Directory
+if ($action === 'delete_party') {
+    $partyId = $data['id'] ?? '';
+    if (empty($partyId)) {
+        echo json_encode(['success' => false, 'message' => 'Party ID is required.']);
+        exit;
+    }
+
+    $parties = getParties($masterKey) ?: [];
+    $filtered = array_values(array_filter($parties, function($p) use ($partyId) {
+        return ($p['id'] ?? '') !== $partyId && ($p['partyName'] ?? '') !== $partyId;
+    }));
+    saveParties($filtered, $masterKey);
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Party deleted successfully.',
+        'parties' => $filtered
+    ]);
+    exit;
+}
+
 // Save or Update Estimate
 if ($action === 'save_estimate') {
     $estimate = $data['estimate'] ?? null;
@@ -161,17 +217,52 @@ if ($action === 'save_estimate') {
     }
 
     $saved = saveEstimates($estimates, $masterKey);
+
+    // Memorize & update Party-Wise Custom Pricing
+    $partyName = trim($estimate['partyName'] ?? '');
+    $savedParty = null;
+    if (!empty($partyName)) {
+        $doorRates = [];
+        foreach (($estimate['doors'] ?? []) as $d) {
+            $cat = !empty($d['category']) ? trim($d['category']) : detectDoorCategory($d['doorType'] ?? '', $d['flushDoorType'] ?? '', $d['notes'] ?? '');
+            $r = (float)($d['rate'] ?? 0);
+            if ($r > 0 && !empty($cat)) {
+                $doorRates[$cat] = $r;
+            }
+        }
+
+        $frameRates = [];
+        foreach (($estimate['wpcFrames'] ?? []) as $f) {
+            $sec = trim($f['section'] ?? '3x2');
+            $r = (float)($f['rate'] ?? 0);
+            if ($r > 0 && !empty($sec)) {
+                $frameRates[$sec] = $r;
+            }
+        }
+
+        $savedParty = upsertPartyRecord([
+            'partyName' => $partyName,
+            'partyMobile' => trim($estimate['partyMobile'] ?? ''),
+            'partyAddress' => trim($estimate['partyAddress'] ?? ''),
+            'doorRates' => $doorRates,
+            'frameRates' => $frameRates,
+            'orderDate' => $estimate['orderDate'] ?? date('Y-m-d')
+        ], $masterKey);
+    }
+
     if ($saved) {
         echo json_encode([
             'success' => true,
-            'message' => 'Estimate saved and encrypted successfully.',
-            'estimate' => $estimate
+            'message' => 'Estimate saved and encrypted successfully. Party pricing memorized.',
+            'estimate' => $estimate,
+            'party' => $savedParty
         ]);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to save encrypted estimate.']);
     }
     exit;
 }
+
 
 // Delete Estimate
 if ($action === 'delete_estimate') {
@@ -210,7 +301,7 @@ if ($action === 'import_json') {
     $estimates = getEstimates($masterKey) ?: [];
 
     // Helper to produce a completely clean, isolated party estimate
-    $sanitizeParty = function($item) {
+    $sanitizeParty = function($item) use ($masterKey) {
         if (!is_array($item)) return null;
         $orderId = !empty($item['orderNumber']) ? $item['orderNumber'] : (!empty($item['orderNo']) ? $item['orderNo'] : (!empty($item['estimateNo']) ? $item['estimateNo'] : (!empty($item['id']) ? $item['id'] : 'RKD-' . date('dmY') . '-' . rand(100, 999))));
         
@@ -228,17 +319,23 @@ if ($action === 'import_json') {
         if (is_array($rawDoors)) {
             foreach ($rawDoors as $idx => $d) {
                 if (!is_array($d)) continue;
+                $doorType = trim($d['doorType'] ?? $d['type'] ?? $d['description'] ?? 'DOOR');
+                $flushSpec = trim($d['flushDoorType'] ?? $d['flush'] ?? $d['flushSpec'] ?? '');
+                $doorNotes = trim($d['notes'] ?? $d['remark'] ?? '');
+                $category = !empty($d['category']) ? trim($d['category']) : detectDoorCategory($doorType, $flushSpec, $doorNotes);
+
                 $cleanDoors[] = [
                     'id' => $d['id'] ?? ('door-' . (time() + $idx)),
-                    'doorType' => trim($d['doorType'] ?? $d['type'] ?? $d['description'] ?? 'DOOR'),
-                    'flushDoorType' => trim($d['flushDoorType'] ?? $d['flush'] ?? $d['flushSpec'] ?? ''),
+                    'category' => $category,
+                    'doorType' => $doorType,
+                    'flushDoorType' => $flushSpec,
                     'designNo' => trim($d['designNo'] ?? $d['design'] ?? ''),
                     'thickness' => trim($d['thickness'] ?? $d['thick'] ?? ''),
                     'height' => (float)($d['height'] ?? $d['h'] ?? 0),
                     'width' => (float)($d['width'] ?? $d['w'] ?? 0),
                     'quantity' => (int)($d['quantity'] ?? $d['qty'] ?? $d['nos'] ?? 1),
                     'rate' => (float)($d['rate'] ?? $d['price'] ?? 0),
-                    'notes' => trim($d['notes'] ?? $d['remark'] ?? '')
+                    'notes' => $doorNotes
                 ];
             }
         }
@@ -275,6 +372,32 @@ if ($action === 'import_json') {
                     'amount' => (float)($c['amount'] ?? 0)
                 ];
             }
+        }
+
+        // Memorize this imported party and their rates into Party Master
+        if (!empty($partyName)) {
+            $doorRates = [];
+            foreach ($cleanDoors as $cd) {
+                if (!empty($cd['category']) && $cd['rate'] > 0) {
+                    $doorRates[$cd['category']] = $cd['rate'];
+                }
+            }
+            $frameRates = [];
+            foreach ($cleanFrames as $cf) {
+                $sec = trim($cf['section'] ?? '3x2');
+                if (!empty($sec) && $cf['rate'] > 0) {
+                    $frameRates[$sec] = $cf['rate'];
+                }
+            }
+
+            upsertPartyRecord([
+                'partyName' => $partyName,
+                'partyMobile' => $partyMobile,
+                'partyAddress' => $partyAddress,
+                'doorRates' => $doorRates,
+                'frameRates' => $frameRates,
+                'orderDate' => $orderDate
+            ], $masterKey);
         }
 
         return [
@@ -318,11 +441,13 @@ if ($action === 'import_json') {
     saveEstimates($estimates, $masterKey);
     echo json_encode([
         'success' => true,
-        'message' => 'New party data imported successfully. Old data cleared and new party rendered fresh.',
-        'estimate' => $activeNewParty
+        'message' => 'New party data imported successfully. Old data cleared, new party rendered fresh, and party rates memorized.',
+        'estimate' => $activeNewParty,
+        'parties' => getParties($masterKey)
     ]);
     exit;
 }
+
 
 // Update Shop Settings
 if ($action === 'update_settings') {

@@ -694,3 +694,154 @@ body {
         padding: 15px;
     }
 }
+
+/* Quick Category / Section Pills */
+.quick-category-pills {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.btn-pill {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    border-radius: 9999px;
+    padding: 3px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-pill:hover {
+    background: #4338ca;
+    color: #ffffff;
+    border-color: #4338ca;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(67, 56, 202, 0.2);
+}
+
+.btn-pill:active {
+    transform: translateY(0);
+}
+
+/* Party Rate Badge & Status */
+.party-rate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #eef2ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+}
+
+.party-rate-badge.new {
+    background: #f0fdf4;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+
+.party-rate-badge .badge-tag {
+    background: #4338ca;
+    color: #ffffff;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+}
+
+/* Parties Modal Layout */
+.parties-modal-layout {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 16px;
+    min-height: 480px;
+}
+
+@media (max-width: 800px) {
+    .parties-modal-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+.party-sidebar-list {
+    border-right: 1px solid #e2e8f0;
+    padding-right: 12px;
+    max-height: 520px;
+    overflow-y: auto;
+}
+
+.party-card-item {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.party-card-item:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+}
+
+.party-card-item.active {
+    background: #eef2ff;
+    border-color: #818cf8;
+    box-shadow: 0 0 0 1px #818cf8;
+}
+
+.party-card-name {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #0f172a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.party-card-meta {
+    font-size: 11.5px;
+    color: #64748b;
+    margin-top: 2px;
+}
+
+.rate-grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.rate-box-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.rate-box-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #475569;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+}
+
+.rate-box-input {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    font-size: 14px;
+    color: #1e1b4b;
+}
+

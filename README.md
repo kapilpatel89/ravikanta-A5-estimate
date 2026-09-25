@@ -48,11 +48,37 @@ A secure, standalone web application built with **HTML, CSS, JavaScript, and PHP
   - **In-App A5 Print**: Click `Preview & Print A5` on the dashboard to view the live preview and trigger native printing.
   - **Dedicated Print View**: Accessible via [`print.php`](file:///e:/Ravi%20kanta%20Estimate%20print%20A5/print.php).
 
-### 5. Setup Wizard & Security Provisioning (`setup.php`)
+### 5. Party Directory & Memorized Custom Pricing (Party-Wise Isolation)
+- **Zero Cross-Party Contamination**: Each party maintains their own independent custom price card (e.g. Party A has Laminate at ₹250/sqft, while Party B has Laminate at ₹255/sqft).
+- **Automatic Memorization**:
+  - **Import JSON**: Importing estimate JSON automatically memorizes the customer and their custom door/frame rates into the encrypted party master.
+  - **Save Estimate**: Saving or updating an estimate automatically updates the latest agreed rates for that specific party.
+  - **Manual Party Directory**: Open the **👥 Parties & Rates** modal to add, search, edit, or delete customer price cards.
+- **Smart Rate Auto-Fill**:
+  - Typing or selecting a customer name automatically detects memorized rates and displays an active rate badge (e.g. `⚡ Active Rates: 7 door types, 3 frame sections memorized`).
+  - Adding a door category instantly auto-fills that specific party's agreed rate into the Rate (₹/sqft) field.
+
+### 6. Door Categories & Quick-Add Pills
+- Full support for all standard and modern door finishes:
+  - **Microcoating**
+  - **Membrane**
+  - **Primer**
+  - **Laminate**
+  - **WPC**
+  - **UV Coating**
+  - **Veneer**
+  - **Flush Door**
+  - **Teak Wood**
+- **One-Click Quick Add Pills**:
+  - `+ Microcoating`, `+ Membrane`, `+ Primer`, `+ Laminate`, `+ WPC`, `+ UV Coating`, `+ Veneer` buttons to add rows with pre-selected category and auto-filled party rate.
+- **WPC Frame Quick Add Pills**:
+  - `+ 3x2 (7ft)`, `+ 4x2 (7ft)`, `+ 4x2.5 (7ft)`, `+ 5x2.5 (7ft)` buttons to quickly append standard frames with party-specific section rates.
+
+### 7. Setup Wizard & Security Provisioning (`setup.php`)
 - Guided first-time setup or emergency reconfiguration.
 - Generates a cryptographically secure **Master Decryption Key** (`RK-XXXX-XXXX-XXXX-XXXX-XXXX`) with 1-click clipboard copy and `.txt` backup file download.
 - Sets your 4 to 8-digit access PIN and business details (Shop Name, Mobile, Address).
-- Automatically initializes the local encrypted database with preloaded sample data (**RK-KISHAN** - 20 Doors & 21 WPC Frames).
+- Automatically initializes the local encrypted database with preloaded sample data (**RK-KISHAN** - 20 Doors & 21 WPC Frames) and seeds the initial party master directory.
 - 1-click startup on Windows via **`setup.bat`**.
 
 ---
@@ -113,7 +139,8 @@ e:/Ravi kanta Estimate print A5/
     ├── .htaccess            # Apache direct access denial
     ├── index.html           # Directory listing blocker
     ├── config.enc.json      # Encrypted config and lockout tracking
-    └── estimates.enc.json   # AES-256 encrypted estimates database
+    ├── estimates.enc.json   # AES-256 encrypted estimates database
+    └── parties.enc.json     # AES-256 encrypted party master & custom price cards
 ```
 
 ---

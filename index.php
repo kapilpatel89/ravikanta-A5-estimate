@@ -177,6 +177,10 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
                         Load Sample
                     </button>
 
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="openPartiesModal()" title="View and manage Party Master & custom price sheets">
+                        👥 Parties &amp; Rates
+                    </button>
+
                     <button type="button" class="btn btn-secondary btn-sm" onclick="openHistoryModal()">
                         History (<span id="savedCountBadge">0</span>)
                     </button>
@@ -221,7 +225,7 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
             <div class="card">
                 <div class="card-header">
                     <div class="card-title-group">
-                        <span class="card-title">Party & Order Details</span>
+                        <span class="card-title">Party &amp; Order Details</span>
                     </div>
                     <div style="font-size:12px; color:#64748b;">Header will print as <strong>"ESTIMATE"</strong> on A5 Sheet</div>
                 </div>
@@ -236,8 +240,15 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
                             <input type="date" id="orderDate" class="form-control" value="<?= date('Y-m-d') ?>">
                         </div>
                         <div class="form-group" style="flex:2;">
-                            <label for="partyName">Party Name *</label>
-                            <input type="text" id="partyName" class="form-control" placeholder="Customer / Party Name" value="RK-KISHAN" required>
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                <label for="partyName" style="margin-bottom:0;">Party Name *</label>
+                                <button type="button" style="font-size:11.5px; text-decoration:none; color:var(--primary); font-weight:700; background:none; border:none; cursor:pointer;" onclick="openPartiesModal()">
+                                    👥 Directory &amp; Rates
+                                </button>
+                            </div>
+                            <input type="text" id="partyName" list="partySuggestionsList" class="form-control" placeholder="Type or select customer..." value="RK-KISHAN" required autocomplete="off" oninput="onPartyNameInput(this.value)" onchange="onPartyNameSelected(this.value)">
+                            <datalist id="partySuggestionsList"></datalist>
+                            <div id="activePartyRateBadge" style="margin-top:6px; display:none;"></div>
                         </div>
                         <div class="form-group" style="flex:1.5;">
                             <label for="partyMobile">Party Mobile *</label>
@@ -263,34 +274,47 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
 
             <!-- Doors Section Card -->
             <div class="card">
-                <div class="card-header">
+                <div class="card-header" style="flex-wrap:wrap; gap:10px;">
                     <div class="card-title-group">
-                        <span class="card-title">Door Specifications & SQFT Calculation</span>
+                        <span class="card-title">Door Specifications &amp; SQFT Calculation</span>
                         <span id="doorsCountBadge" class="card-badge">0 Doors</span>
                         <span id="doorsSqftBadge" class="card-badge" style="background:#f1f5f9; color:#334155;">0.00 SQFT</span>
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="addDoorRow()">
-                        + Add Door Item
-                    </button>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <div class="quick-category-pills">
+                            <span style="font-size:11.5px; font-weight:700; color:#64748b;">+ Quick:</span>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('Microcoating')">+ Microcoating</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('Membrane')">+ Membrane</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('Primer')">+ Primer</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('Laminate')">+ Laminate</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('WPC')">+ WPC</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('UV Coating')">+ UV Coating</button>
+                            <button type="button" class="btn-pill" onclick="quickAddDoorCategory('Veneer')">+ Veneer</button>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="addDoorRow()">
+                            + Add Door Item
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body" style="padding:0;">
                     <div class="table-responsive">
                         <table class="data-table" id="doorsTable">
                             <thead>
                                 <tr>
-                                    <th style="width:40px;">#</th>
+                                    <th style="width:36px;">#</th>
+                                    <th style="width:130px;">Category</th>
                                     <th>Door Type / Spec</th>
                                     <th>Flush Spec</th>
-                                    <th style="width:90px;">Design</th>
-                                    <th style="width:85px;">Thick</th>
-                                    <th style="width:75px;">H (in)</th>
-                                    <th style="width:75px;">W (in)</th>
-                                    <th style="width:65px;">Qty</th>
-                                    <th style="width:85px;" class="num-cell">SQFT</th>
-                                    <th style="width:95px;" class="num-cell">Rate (₹/sqft)</th>
-                                    <th style="width:110px;" class="num-cell">Amount (₹)</th>
+                                    <th style="width:85px;">Design</th>
+                                    <th style="width:75px;">Thick</th>
+                                    <th style="width:70px;">H (in)</th>
+                                    <th style="width:70px;">W (in)</th>
+                                    <th style="width:60px;">Qty</th>
+                                    <th style="width:80px;" class="num-cell">SQFT</th>
+                                    <th style="width:90px;" class="num-cell">Rate (₹/sqft)</th>
+                                    <th style="width:105px;" class="num-cell">Amount (₹)</th>
                                     <th>Notes</th>
-                                    <th style="width:80px; text-align:center;">Action</th>
+                                    <th style="width:75px; text-align:center;">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="doorsTableBody">
@@ -298,7 +322,7 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
                             </tbody>
                             <tfoot>
                                 <tr style="background:#f8fafc; font-weight:700;">
-                                    <td colspan="7" style="text-align:right;">Doors Subtotal:</td>
+                                    <td colspan="8" style="text-align:right;">Doors Subtotal:</td>
                                     <td id="doorsTotalQty" style="font-family:var(--font-mono);">0</td>
                                     <td id="doorsTotalSqft" class="num-cell" style="font-family:var(--font-mono);">0.00</td>
                                     <td></td>
@@ -309,22 +333,32 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
                         </table>
                     </div>
                     <div style="padding:12px 20px; font-size:12.5px; color:#64748b; background:#fafafa; border-top:1px solid #e2e8f0;">
-                        <strong>SQFT Formula:</strong> Height (in) &times; Width (in) &times; Qty &divide; 144. Example: 79" &times; 39" &times; 2 &divide; 144 = 42.79 SQFT.
+                        <strong>SQFT Formula:</strong> Height (in) &times; Width (in) &times; Qty &divide; 144. Example: 79" &times; 39" &times; 2 &divide; 144 = 42.79 SQFT. Rates auto-fill from active party's price sheet!
                     </div>
                 </div>
             </div>
 
             <!-- WPC Frames Section Card -->
             <div class="card" id="framesCardSection">
-                <div class="card-header">
+                <div class="card-header" style="flex-wrap:wrap; gap:10px;">
                     <div class="card-title-group">
-                        <span class="card-title">WPC Frames & RFT Calculation</span>
+                        <span class="card-title">WPC Frames &amp; RFT Calculation</span>
                         <span id="framesCountBadge" class="card-badge">0 Frames</span>
                         <span id="framesRftBadge" class="card-badge" style="background:#f1f5f9; color:#334155;">0.00 RFT</span>
                     </div>
-                    <button type="button" class="btn btn-primary btn-sm" onclick="addFrameRow()">
-                        + Add WPC Frame
-                    </button>
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <div class="quick-category-pills">
+                            <span style="font-size:11.5px; font-weight:700; color:#64748b;">+ Quick:</span>
+                            <button type="button" class="btn-pill" onclick="quickAddFrameSection('3x2', 7)">+ 3x2 (7ft)</button>
+                            <button type="button" class="btn-pill" onclick="quickAddFrameSection('3x2', 3)">+ 3x2 (3ft)</button>
+                            <button type="button" class="btn-pill" onclick="quickAddFrameSection('4x2', 7)">+ 4x2</button>
+                            <button type="button" class="btn-pill" onclick="quickAddFrameSection('4x2.5', 7)">+ 4x2.5</button>
+                            <button type="button" class="btn-pill" onclick="quickAddFrameSection('5x2.5', 7)">+ 5x2.5</button>
+                        </div>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="addFrameRow()">
+                            + Add WPC Frame
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body" style="padding:0;">
                     <div class="table-responsive">
@@ -359,10 +393,11 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
                         </table>
                     </div>
                     <div style="padding:12px 20px; font-size:12.5px; color:#64748b; background:#fafafa; border-top:1px solid #e2e8f0;">
-                        <strong>RFT Formula:</strong> Length (ft) &times; Qty (nos). Example: 7 feet &times; 14 nos = 98 RFT. Rate applies per RFT.
+                        <strong>RFT Formula:</strong> Length (ft) &times; Qty (nos). Example: 7 feet &times; 14 nos = 98 RFT. Rates auto-fill per party!
                     </div>
                 </div>
             </div>
+
 
             <!-- Empty WPC Notification Banner (when party has no WPC frames) -->
             <div id="wpcEmptyBanner" class="card" style="display:none; padding:14px 20px; background:#f8fafc; border:1.5px dashed #cbd5e1; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:20px;">
@@ -677,6 +712,113 @@ $attemptsLeft = max(0, 3 - $failedAttempts);
         </div>
     </div>
 
+    <!-- PARTIES MASTER & CUSTOM PRICE SHEETS MODAL -->
+    <div id="partiesModal" class="modal-overlay">
+        <div class="modal-content" style="max-width:960px;">
+            <div class="modal-header">
+                <div class="modal-title">👥 Party Directory &amp; Custom Price Cards</div>
+                <button type="button" class="modal-close" onclick="closePartiesModal()">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:16px;">
+                <div class="parties-modal-layout">
+                    <!-- Left Column: Search & Party List -->
+                    <div class="party-sidebar-list">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                            <span style="font-size:12px; font-weight:800; color:#334155; text-transform:uppercase; letter-spacing:0.04em;">Parties (<span id="partiesCountBadge">0</span>)</span>
+                            <button type="button" class="btn btn-primary btn-sm" style="padding:3px 8px; font-size:11px;" onclick="createNewPartyForm()">+ New Party</button>
+                        </div>
+                        <input type="text" id="partySearchInput" class="form-control" placeholder="Search party name..." style="padding:6px 10px; font-size:12px; margin-bottom:10px;" oninput="filterPartiesList(this.value)">
+                        <div id="partyListContainer">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Active Party Editor & Rate Sheets -->
+                    <div style="padding-left:4px; max-height:520px; overflow-y:auto;" id="partyEditorPane">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <h3 id="editorPartyTitle" style="font-size:18px; font-weight:800; color:#0f172a; margin:0;">Edit Party</h3>
+                                <div id="editorPartySub" style="font-size:12px; color:#64748b;">Manage customer details and custom price sheets</div>
+                            </div>
+                            <div style="display:flex; gap:6px;">
+                                <button type="button" class="btn btn-success btn-sm" onclick="applyPartyToActiveEstimate()">
+                                    ✓ Select for Active Estimate
+                                </button>
+                                <button type="button" class="btn btn-danger btn-sm" onclick="deletePartyFromModal()" id="btnDeleteParty">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Party Basic Details -->
+                        <div class="form-row" style="margin-bottom:12px;">
+                            <div class="form-group" style="flex:2;">
+                                <label style="font-size:11.5px; font-weight:700;">Party / Customer Name *</label>
+                                <input type="text" id="editPartyName" class="form-control" placeholder="Party Name" required>
+                            </div>
+                            <div class="form-group" style="flex:1.5;">
+                                <label style="font-size:11.5px; font-weight:700;">Mobile No.</label>
+                                <input type="text" id="editPartyMobile" class="form-control" placeholder="10-digit mobile">
+                            </div>
+                        </div>
+                        <div class="form-row" style="margin-bottom:14px;">
+                            <div class="form-group" style="flex:3;">
+                                <label style="font-size:11.5px; font-weight:700;">Delivery / Site Address</label>
+                                <input type="text" id="editPartyAddress" class="form-control" placeholder="Delivery site address">
+                            </div>
+                            <div class="form-group" style="flex:2;">
+                                <label style="font-size:11.5px; font-weight:700;">Notes / Payment Terms</label>
+                                <input type="text" id="editPartyNotes" class="form-control" placeholder="Special terms or discounts">
+                            </div>
+                        </div>
+
+                        <!-- Door Category Price Card -->
+                        <div style="margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #e2e8f0; padding-bottom:6px; margin-bottom:8px;">
+                                <span style="font-size:13px; font-weight:800; color:#1e1b4b;">1. DOOR CATEGORY RATES (₹ / SQFT)</span>
+                                <span style="font-size:11px; color:#64748b;">Auto-applied when this category is selected</span>
+                            </div>
+                            <div class="rate-grid-container" id="doorRatesGrid">
+                                <!-- Populated dynamically: Microcoating, Membrane, Primer, Laminate, WPC, UV Coating, Veneer, etc. -->
+                            </div>
+                            <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
+                                <input type="text" id="newDoorCategoryName" class="form-control" placeholder="Custom Category (e.g. Teak Wood)" style="max-width:200px; font-size:12px; padding:5px 8px;">
+                                <input type="number" id="newDoorCategoryRate" class="form-control num-cell" placeholder="Rate ₹" style="max-width:100px; font-size:12px; padding:5px 8px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addCustomDoorCategoryRate()">+ Add Category</button>
+                            </div>
+                        </div>
+
+                        <!-- WPC Frame Price Card -->
+                        <div style="margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1.5px solid #e2e8f0; padding-bottom:6px; margin-bottom:8px;">
+                                <span style="font-size:13px; font-weight:800; color:#1e1b4b;">2. WPC FRAME SECTION RATES (₹ / RFT)</span>
+                                <span style="font-size:11px; color:#64748b;">Auto-applied for frame section sizes</span>
+                            </div>
+                            <div class="rate-grid-container" id="frameRatesGrid">
+                                <!-- Populated dynamically: 3x2, 4x2, 4x2.5, 5x2.5 -->
+                            </div>
+                            <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
+                                <input type="text" id="newFrameSectionName" class="form-control" placeholder="Custom Section (e.g. 6x2.5)" style="max-width:200px; font-size:12px; padding:5px 8px;">
+                                <input type="number" id="newFrameSectionRate" class="form-control num-cell" placeholder="Rate ₹" style="max-width:100px; font-size:12px; padding:5px 8px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="addCustomFrameSectionRate()">+ Add Section</button>
+                            </div>
+                        </div>
+
+                        <div style="text-align:right; border-top:1px solid #e2e8f0; padding-top:12px;">
+                            <button type="button" class="btn btn-primary" onclick="savePartyFromModal()">
+                                💾 Save Party &amp; Price Card
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePartiesModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <script src="assets/js/app.js?v=<?= time() ?>"></script>
 </body>
 </html>
+

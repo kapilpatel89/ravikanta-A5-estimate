@@ -216,11 +216,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             saveEstimates($initialEstimates, $decryptionKey);
+            seedPartiesFromEstimates($decryptionKey);
 
             // Log user in automatically
             $_SESSION['authenticated'] = true;
             $_SESSION['master_key'] = $decryptionKey;
             $success = true;
+
         }
     }
 }
